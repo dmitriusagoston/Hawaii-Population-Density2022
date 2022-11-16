@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+.counties {
+  fill: none;
+  stroke: #FFF;
+  /*stroke-linejoin: round;*/
+}
+
+.states {
+  fill: none;
+  stroke: #fff;
+  stroke-linejoin: round;
+}
+
+.colorButton {
+  position: relative;
+  top: 100px;
+  left: 900px;
+}    
+    
+#tooltip {    
+    position: absolute;
+    width: 180px;
+    height: 30px;
+    padding: 2px;
+    font: 12px sans-serif;
+    background: lightsteelblue;
+    border: 0px;
+    border-radius: 8px;
+    pointer-events: none;
+}
+
+#country {
+    text-align: center;
+}
+
+#c {
+    position: absolute;
+    left: 50%;
+}
+    
+#tooltip.hidden {
+    display: none;
+}
+ 
+#rate, #county {
+    float: right;
+}
+    
+</style>
+
+<title>Hawaii Population Density, 2022</title>
+
+<body>
+
+<h1>Hawaii Population Density, 2022</h1>
+    
+<div id="option">
+    <input name="colorButton"
+           class="colorButton"
+           type="button" 
+           value="Color" 
+           onclick="colorClick()" 
+           style="position: fixed z-index:2" />
+</div>
+    
+<div id="tooltip" class="hidden">
+    <div id="id"></div>
+    <div>County Name <span id="c">:</span> <span id="county"></span></div>
+    <div>Density <span id="c">:</span> <span id="rate"></span></div>
+</div>
+    
+<svg width="960" height="600" style="z-index:-1"></svg>
+    
+<div id="option">
+    <input name="outlineButton"
+           class="outlineButton"
+           type="button" 
+           value="Toggle County Boundary" 
+           onclick="outlineClick()" 
+           style="position: fixed z-index:2" />
+</div>
+
+<p>
+  Dmitrius Agoston <br>
+  Instructor: Suresh Lodha <br>
+  CSE 163: Data programming for Visualization <br>
+  Fall 2022
+</p>
+    
+<script src="//d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<script src="//d3js.org/topojson.v1.min.js"></script>
+<script>
+
+var svg = d3.select("svg"),
+    width = +svg.attr("width"),
+    height = +svg.attr("height");
+    
+var rateById = d3.map();
+var countyById = d3.map();
+
+/*
+var quantize = d3.scaleQuantize()
+    .domain([0, 0.15])
+    .range(d3.range(9).map(function(i) { return "q" + i + "-9"; }));
+*/
+
+var projection = d3.geoAlbersUsa()
+    .scale(5000)
+    .translate([(width / 2) + 800, (height / 2) - 1000]);
+
+var path = d3.geoPath()
+    .projection(projection);
+
+var color = d3.scaleThreshold()
+    .domain([1, 10, 50, 100, 200, 500, 1000, 1500])
+    .range(d3.schemeOrRd[9]);
+
+var x = d3.scaleSqrt()
+    .domain([0, 2000])
+    .rangeRound([540, 950]);
+
+var g = svg.append("g")
+    .attr("class", "key")
+    .attr("transform", "translate(0,40)");
+
+var tooltip = d3.select("#tooltip");    
+
+g.selectAll("rect")
+  .data(color.range().map(function(d) {
+      d = color.invertExtent(d);
+      if (d[0] == null) d[0] = x.domain()[0];
+      if (d[1] == null) d[1] = x.domain()[1];
+      return d;
+    }))
+  .enter().append("rect")
+    .attr("height", 8)
+    .attr("x", function(d) { return x(d[0]); })
+    .attr("width", function(d) { return x(d[1]) - x(d[0]); })
+    .attr("fill", function(d) { return color(d[0]); });
+
+g.append("text")
+    .attr("class", "caption")
+    .attr("x", x.range()[0])
+    .attr("y", -6)
+    .attr("fill", "#000")
+    .attr("text-anchor", "start")
+    .attr("font-weight", "bold")
+    .text("Population per square mile");
+
+g.call(d3.axisBottom(x)
+    .tickSize(13)
+    .tickValues(color.domain()))
+  .select(".domain")
+    .remove();
+    
+d3.queue()
+    .defer(d3.json, "us-10m.json")
+    .defer(d3.csv, "Hawaii-Pop.csv", function(d) { rateById.set(d.id, +d.rate); })
+    .defer(d3.csv, "Hawaii-Pop.csv", function(d) { countyById.set(d.id, d.county); })
+    .await(ready);
+
+function ready(error, us) {
+  if (error) throw error;
+
+  svg.append("g")
+      .attr("class", "counties")
+    .selectAll("path")
+      .data(topojson.feature(us, us.objects.counties).features)
+    .enter().append("path")
+      //.attr("class", function(d) { return quantize(rateById.get(d.id)); })
+      .attr("fill", function(d) { return color(rateById.get(d.id)); })
+      .attr("d", path)
+    .on("mouseover", function(d) {
+    d3.select("#tooltip")
+        .style("left", (d3.event.pageX) + "px")
+        .style("top", (d3.event.pageY - 28) + "px")
+        d3.select("#rate")
+        .text(rateById.get(d.id))
+        d3.select("#county")
+        .text(countyById.get(d.id))
+
+    d3.select("#tooltip").classed("hidden", false);
+    })
+
+    .on("mouseout", function(d) {
+        d3.select("#tooltip").classed("hidden", true);
+    });
+
+  /*svg.append("path")
+      .datum(topojson.mesh(us, us.objects.states, function(a, b) { return a !== b; }))
+      .attr("class", "states")
+      .attr("fill", "none")
+      .attr("stroke", "#000")
+      .attr("stroke-opacity", 0.3)
+      .attr("d", path);*/
+}
+ 
+var colorToggle = false;
+var outlineToggle = true;
+    
+function colorClick() {
+    toggleColor();
+    updateColor();
+}
+    
+function toggleColor() {
+    if (colorToggle == true) {
+        colorToggle = false;
+    } else {
+        colorToggle = true;
+    }
+}
+    
+function updateColor() {
+  if (colorToggle == true) {
+    var color = d3.scaleThreshold()
+    .domain([1, 10, 50, 100, 200, 500, 1000, 1500])
+    .range(d3.schemeBuGn[9]);
+  } else {
+    var color = d3.scaleThreshold()
+    .domain([1, 10, 50, 100, 200, 500, 1000, 1500])
+    .range(d3.schemeOrRd[9]);
+  }
+    
+  d3.selectAll("path")
+    .attr("fill", function(d) { return color(rateById.get(d.id)); })
+    .attr("d", path);
+    
+  d3.selectAll("rect")
+    .attr("height", 8)
+    .attr("x", function(d) { return x(d[0]); })
+    .attr("width", function(d) { return x(d[1]) - x(d[0]); })
+    .attr("fill", function(d) { return color(d[0]); });
+};
+    
+function outlineClick() {
+    toggleOutline();
+    updateOutline();
+}
+    
+function toggleOutline() {
+    if (outlineToggle == true) {
+        outlineToggle = false;
+    } else {
+        outlineToggle = true;
+    }
+}
+   
+    
+function updateOutline() {
+  if (outlineToggle == true) {
+    d3.selectAll("path")
+      .attr("stroke", "#FFF")
+      .attr("d", path);
+  } else {
+    d3.selectAll("path")
+      .attr("stroke", "#000")
+      .attr("d", path);
+  }
+}
+</script>
